@@ -2,7 +2,7 @@
 """
 import pandas as pd
 
-import utils
+from . import utils
 
 
 def test_pair_dataset():

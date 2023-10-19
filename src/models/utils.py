@@ -2,8 +2,11 @@
 """
 from typing import Tuple
 
+import torch
+from torch import nn
 from torch.utils.data import Dataset
 import pandas as pd
+import numpy as np
 
 
 class PairDataset(Dataset):
@@ -19,7 +22,7 @@ class PairDataset(Dataset):
             dataframe (Dataframe): The dataframe containing the dataset.
             Must contain columns: `reference`, `translation`, `similarity`,
             `ref_tox`, `trn_tox`.
-            """
+        """
         assert all(
             column in dataframe.columns for column in
             ['reference', 'translation', 'similarity', 'ref_tox', 'trn_tox'])
@@ -61,3 +64,59 @@ class PairDataset(Dataset):
             int: The length of the dataset.
         """
         return len(self._data)
+
+
+class BagOfWordsLogisticClassifier(nn.Module):
+    """A simple BoW logistic classifier. Implemented through
+    summing the outputs of `nn.Embeddding` layer.
+
+    Takes in the token sequences, returs logits of the toxicity
+    score of the sequence.
+
+    Input shape: `(n, s)`, `n` - batch dimension, `s` - sequence length.
+    Output shape: `n`
+    """
+
+    def __init__(self, vocab_size: int):
+        """A simple BoW logistic classifier. Implemented through
+        summing the outputs of `nn.Embeddding` layer.
+
+        Takes in the token sequences, returs logits of the toxicity
+        score of the sequence.
+
+        Input shape: `(n, s)`, `n` - batch dimension, `s` - sequence length.
+        Output shape: `n`
+
+        Args:
+            vocab_size (int): The size of the token vocabulary.
+        """
+        super().__init__()
+        self._classifier = nn.Embedding(vocab_size, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Classifies sequences.
+
+        Input shape: `(n, s)`, `n` - batch dimension, `s` - sequence length.
+        Output shape: `n`
+
+        Args:
+            x (Tensor): Input sequences.
+
+        Returns:
+            Tensor: The toxicity score logit for each of the sequences.
+        """
+        x = self._classifier(x)
+        x = x[..., 0]
+        x = x.sum(dim=-1)
+        return x
+
+    def get_weights(self) -> np.ndarray:
+        """Return the toxicity score of each token in the dictionary.
+
+        Returns:
+            ndarray: Tensor of shape (`v`,), where `v` is the vocabulary
+            size. `i`-th number corresponds to the score of the token
+            with id `i`.
+        """
+        return self._classifier.weight.data.sigmoid().flatten().detach().cpu(
+        ).numpy()

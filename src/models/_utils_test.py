@@ -43,3 +43,14 @@ def test_logistic_classifier():
         loss.backward()
         optimizer.step()
     assert np.max(np.abs(classifier.get_weights() - np.array([.5, 0, 1]))) < .1
+
+
+def test_dictionary_model():
+    """Tests `DictionaryModel` class.
+    """
+    dictionary = {'a': 'A'}
+    model = utils.DictionaryModel(dictionary)
+    text = [['a', 'B', 'B', 'a'], ['B', 'C']]
+    transformed_text = model.transform(text)
+    target_text = [['A', 'B', 'B', 'A'], ['B', 'C']]
+    assert transformed_text == target_text

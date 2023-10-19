@@ -1,6 +1,6 @@
 """Module containing code used both for training and inference.
 """
-from typing import Tuple
+from typing import Tuple, Dict, List
 
 import torch
 from torch import nn
@@ -120,3 +120,39 @@ class BagOfWordsLogisticClassifier(nn.Module):
         """
         return self._classifier.weight.data.sigmoid().flatten().detach().cpu(
         ).numpy()
+
+
+class DictionaryModel:
+    """Replaces all the words present in the dictionary by synonyms.
+    Tokinization of sentences should be done separately.
+    """
+
+    def __init__(self, dictionary: Dict[str, str]):
+        """Replaces all the words present in the dictionary by synonyms.
+        Tokinization of sentences should be done separately.
+
+        Args:
+            dictionary (Dict[str, str]): The dictionary for replacing words.
+        """
+        self._dictionary = dictionary
+
+    def transform(self, sentences: List[List[str]]) -> List[List[str]]:
+        """Transforms input sentences, replacing words present
+        in the dictionary with synonyms from the dictionary.
+
+        Args:
+            sentences (List[List[str]]): Sentences that need to be transformed.
+
+        Returns:
+            List[List[str]]: Sentences with toxic words replaced.
+        """
+        return [[self._dictionary.get(word, word) for word in sentence]
+                for sentence in sentences]
+
+    def get_dictionary(self) -> Dict[str, str]:
+        """Returns the internal dictionary.
+
+        Returns:
+            Dict[str, str]: Dictionary of toxic words and their synonyms.
+        """
+        return self._dictionary

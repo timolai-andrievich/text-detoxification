@@ -3,7 +3,6 @@
 """
 import argparse
 from collections import Counter, OrderedDict
-from functools import cache
 import json
 import os
 import random  # For seeding
@@ -182,13 +181,13 @@ def build_vocab(
 
 
 def train_model(classifier: nn.Module, train_loader: DataLoader,
-                val_loader: DataLoader, args: Args):
+                test_loader: DataLoader, args: Args):
     """Trains the classifier. Modifies the model in-place.
 
     Args:
         classifier (Module): Logistic classifier model.
         train_loader (DataLoader): Train data loader.
-        val_loader (DataLoader): Validation data loader.
+        test_loader (DataLoader): Test data loader.
         args (Args): Arguments namepace.
     """
     classifier = classifier.to(args.device)
@@ -200,10 +199,10 @@ def train_model(classifier: nn.Module, train_loader: DataLoader,
     with tqdm.tqdm(total=args.epochs * len(train_loader),
                    desc='Training',
                    disable=args.quiet) as pbar, tqdm.tqdm(
-                       total=len(val_loader),
-                       desc='Validation',
+                       total=len(test_loader),
+                       desc='Test',
                        disable=args.quiet,
-                       position=1) as val_pbar:
+                       position=1) as test_pbar:
         for epoch in range(args.epochs):
             classifier.train()
             losses = []
@@ -227,9 +226,9 @@ def train_model(classifier: nn.Module, train_loader: DataLoader,
             classifier.eval()
             total_correct = 0
             total = 0
-            val_pbar.reset()
+            test_pbar.reset()
             with torch.no_grad():
-                for ref_tokens, trn_tokens, *_ in val_loader:
+                for ref_tokens, trn_tokens, *_ in test_loader:
                     ref_pred = classifier(ref_tokens)
                     ref_accurate = torch.sum((ref_pred >= 0).long())
 
@@ -238,13 +237,13 @@ def train_model(classifier: nn.Module, train_loader: DataLoader,
 
                     total += ref_tokens.shape[0] + trn_tokens.shape[0]
                     total_correct += ref_accurate + trn_accurate
-                    val_pbar.update(1)
-            val_pbar.refresh()
+                    test_pbar.update(1)
+            test_pbar.refresh()
             accuracy = total_correct / total
             train_loss = np.mean(losses)
             pbar.set_postfix({
                 'Epoch': epoch + 1,
-                'Validation accuracy': f'{accuracy * 100:6.2f}%',
+                'Test accuracy': f'{accuracy * 100:6.2f}%',
                 'Train loss': f'{train_loss:.4f}'
             })
 
@@ -292,13 +291,11 @@ def main():
         print(f'File {args.dataset_file} does not exist.')
         exit(1)
     dataframe = pd.read_csv(args.dataset_file, sep='\t', index_col=0)
-    val_proportion, test_proportion = .1, .1
+    test_proportion = .1
     dataset = utils.PairDataset(dataframe)
     test_len = int(len(dataset) * test_proportion)
-    val_len = int(len(dataset) * val_proportion)
-    train_len = len(dataset) - val_len - test_len
-    train_dataset, val_dataset, test_dataset = random_split(
-        dataset, (train_len, val_len, test_len))
+    train_len = len(dataset) - test_len
+    train_dataset, test_dataset = random_split(dataset, (train_len, test_len))
     vocabulary, counter = build_vocab(train_dataset, args.quiet)
 
     def collate_fn(batch):
@@ -307,15 +304,12 @@ def main():
     train_loader = DataLoader(train_dataset,
                               batch_size=args.batch_size,
                               collate_fn=collate_fn)
-    val_loader = DataLoader(val_dataset,
-                            batch_size=args.batch_size,
-                            collate_fn=collate_fn)
     test_loader = DataLoader(test_dataset,
                              batch_size=args.batch_size,
                              collate_fn=collate_fn)
 
     classifier = utils.BagOfWordsLogisticClassifier(len(vocabulary))
-    train_model(classifier, train_loader, val_loader, args)
+    train_model(classifier, train_loader, test_loader, args)
     toxicity = get_toxicity(vocabulary, classifier, counter)
     toxic_tokens = toxicity.argsort()[::-1][:args.dict_len]
     toxic_words = vocabulary.lookup_tokens(toxic_tokens)
@@ -344,7 +338,6 @@ def main():
     }
     with open(args.output_file, 'w', encoding='utf-8') as file:
         json.dump(filtered_synonyms, file)
-    # TODO test evaluation
 
 
 if __name__ == "__main__":

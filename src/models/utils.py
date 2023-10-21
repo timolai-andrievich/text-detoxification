@@ -33,7 +33,7 @@ class PairDataset(Dataset):
             similarity = row['similarity']
             ref_tox = row['ref_tox']
             trn_tox = row['trn_tox']
-            if ref_tox > trn_tox:
+            if ref_tox < trn_tox:
                 ref_text, trn_text = trn_text, ref_text
                 ref_tox, trn_tox = trn_tox, ref_tox
             self._data.append((
@@ -92,6 +92,7 @@ class BagOfWordsLogisticClassifier(nn.Module):
         """
         super().__init__()
         self._classifier = nn.Embedding(vocab_size, 1)
+        self._classifier.weight.data.fill_(0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Classifies sequences.

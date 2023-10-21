@@ -257,7 +257,6 @@ def get_toxicity(vocab: torchtext.vocab.Vocab,
         to the token with index `i`.
     """
     raw_toxicity = classifier.get_weights()
-    np.save('raw_tox.npy', raw_toxicity)  # Debug
     frequencies = np.array(
         [counter[vocab.lookup_token(index)] for index in range(len(vocab))])
     # Because words that are rare might have toxicity that is too high,
@@ -294,8 +293,6 @@ def main():
     train_dataset, val_dataset, test_dataset = random_split(
         dataset, (train_len, val_len, test_len))
     vocabulary, counter = build_vocab(train_dataset, args.quiet)
-    with open('vocab.json', 'w') as file:
-        json.dump(vocabulary.get_stoi(), file)
 
     def collate_fn(batch):
         return collate_batch(batch, vocabulary, device=args.device)

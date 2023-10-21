@@ -34,6 +34,7 @@ class Args(TypedDict):
     dict_len: int
     output_file: int
     device: str
+    learning_rate: float
 
 
 def parse_args() -> Args:
@@ -89,6 +90,12 @@ def parse_args() -> Args:
                         dest='device',
                         default='cpu',
                         help='Device to train the model on. Defaults to cpu.')
+    parser.add_argument('--learning-rate',
+                        type=float,
+                        dest='learning_rate',
+                        default=1e-3,
+                        help='Learning rate passed to the optimizer. '
+                        '0.001 by default')
     args = parser.parse_args()
     return args
 
@@ -187,7 +194,7 @@ def train_model(classifier: nn.Module, train_loader: DataLoader,
     classifier = classifier.to(args.device)
     optimizer = torch.optim.Adam(
         classifier.parameters(),
-        lr=1e-2,
+        lr=args.learning_rate,
         weight_decay=1e-5,
     )
     with tqdm.tqdm(total=args.epochs * len(train_loader),

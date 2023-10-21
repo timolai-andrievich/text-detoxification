@@ -137,18 +137,17 @@ class DictionaryModel:
         """
         self._dictionary = dictionary
 
-    def transform(self, sentences: List[List[str]]) -> List[List[str]]:
+    def transform(self, words: List[str]) -> List[str]:
         """Transforms input sentences, replacing words present
         in the dictionary with synonyms from the dictionary.
 
         Args:
-            sentences (List[List[str]]): Sentences that need to be transformed.
+            words (List[str]): Sentences that need to be transformed.
 
         Returns:
-            List[List[str]]: Sentences with toxic words replaced.
+            List[str]: Sentences with toxic words replaced.
         """
-        return [[self._dictionary.get(word, word) for word in sentence]
-                for sentence in sentences]
+        return [self._dictionary.get(word, word) for word in words]
 
     def get_dictionary(self) -> Dict[str, str]:
         """Returns the internal dictionary.

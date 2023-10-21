@@ -50,7 +50,7 @@ def test_dictionary_model():
     """
     dictionary = {'a': 'A'}
     model = utils.DictionaryModel(dictionary)
-    text = [['a', 'B', 'B', 'a'], ['B', 'C']]
+    text = ['a', 'B', 'B', 'a', 'B', 'C']
     transformed_text = model.transform(text)
-    target_text = [['A', 'B', 'B', 'A'], ['B', 'C']]
+    target_text = ['A', 'B', 'B', 'A', 'B', 'C']
     assert transformed_text == target_text

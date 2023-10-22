@@ -16,17 +16,22 @@ import tqdm
 import utils
 
 
-def get_vocab(dataset: utils.PairDataset, specials) -> torchtext.vocab.Vocab:
+def get_vocab(dataset: utils.PairDataset, specials,
+              args) -> torchtext.vocab.Vocab:
     counter = Counter()
     pbar = tqdm.tqdm(total=len(dataset), desc='Building vocabulary')
     for ref_txt, trn_txt, *_ in dataset:
-        ref_words = tokenize.word_tokenize(ref_txt)
-        trn_words = tokenize.word_tokenize(trn_txt)
+        ref_words = tokenize.word_tokenize(ref_txt.lower())
+        trn_words = tokenize.word_tokenize(trn_txt.lower())
         counter.update(ref_words)
         counter.update(trn_words)
         pbar.update(1)
     pbar.close()
-    vocab = torchtext.vocab.vocab(counter, specials=specials)
+    words = list(sorted(counter.keys(), key=lambda x: counter[x],
+                        reverse=True))[:args.max_tokens]
+    vocab = torchtext.vocab.vocab({word: counter[word]
+                                   for word in words},
+                                  specials=specials)
     return vocab
 
 
@@ -37,6 +42,9 @@ class Args(TypedDict):
     pad_len: int
     batch_size: int
     device: str
+    d_model: int
+    num_layers: int
+    max_tokens: int
 
 
 def parse_args() -> Args:
@@ -50,6 +58,12 @@ def parse_args() -> Args:
     parser.add_argument('--pad-len', type=int, default=200)
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--device', choices=['cuda', 'cpu'], default='cpu')
+    parser.add_argument('--layers', type=int, dest='num_layers', default=1)
+    parser.add_argument('--d-model', type=int, dest='d_model', default=64)
+    parser.add_argument('--max-vocab-size',
+                        type=int,
+                        dest='max_tokens',
+                        default=4096)
     args = parser.parse_args()
     return args
 
@@ -60,9 +74,11 @@ def evaluate_model(model, loader, loss_fn):
     total_len = 0
     with torch.no_grad():
         for ref, trn in loader:
-            pred = model(ref)
+            translation = trn[:, :-1]
+            pred = model(ref, translation)
+            target = trn[:, 1:]
+            target = torch.flatten(target)
             pred = torch.flatten(pred, end_dim=-2)
-            target = torch.flatten(trn)
             loss = loss_fn(pred, target)
             total_len += len(ref)
             losses.append(loss.item() * len(ref))
@@ -70,7 +86,12 @@ def evaluate_model(model, loader, loss_fn):
     return {'Loss': mean_loss}
 
 
-def train_model(model, vocab, args, train_loader, val_loader):
+def train_model(model,
+                vocab,
+                args,
+                train_loader,
+                val_loader,
+                epoch_callback=None):
     pad_index = vocab.get_stoi()['<pad>']
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_index)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -85,10 +106,12 @@ def train_model(model, vocab, args, train_loader, val_loader):
         model.train()
         postfix.update({'Epoch': epoch})
         for ref, trn in train_loader:
-            ref_pred = model(ref)
+            translation = trn[:, :-1]
+            ref_pred = model(ref, translation)
             ref_pred = torch.flatten(ref_pred, end_dim=-2)
-            trn = torch.flatten(trn)
-            loss = loss_fn(ref_pred, trn)
+            target = trn[:, 1:]
+            target = torch.flatten(target)
+            loss = loss_fn(ref_pred, target)
             optimizer.zero_grad()
             loss.backward()
             train_losses.append(loss.item() * len(ref))
@@ -105,6 +128,8 @@ def train_model(model, vocab, args, train_loader, val_loader):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best = copy.deepcopy(model.state_dict())
+        if epoch_callback is not None:
+            epoch_callback(best, last)
         pbar.set_postfix(postfix)
     pbar.close()
     return best, last
@@ -114,29 +139,38 @@ def main():
     nltk.download('punkt', quiet=True)
     args = parse_args()
     dataframe = pd.read_csv(args.dataset_file, sep='\t')
-    dataframe = dataframe.head(1000)  # DEBUG
+    # dataframe = dataframe.head(1000)  # DEBUG
     dataset = utils.PairDataset(dataframe)
-    vocab = get_vocab(dataset, specials=['<unk>', '<pad>'])
+    vocab = get_vocab(dataset,
+                      specials=['<unk>', '<pad>', '<bos>', '<eos>'],
+                      args=args)
     pad_index = vocab.get_stoi()['<pad>']
     unk_index = vocab.get_stoi()['<unk>']
+    bos_index = vocab.get_stoi()['<bos>']
+    eos_index = vocab.get_stoi()['<eos>']
     vocab.set_default_index(unk_index)
-    model = utils.RNN(64, len(vocab), 1).to(args.device)
+    torch.save(vocab, 'vocab_rnn.ckpt')
+    model = utils.RNN(args.d_model, len(vocab),
+                      args.num_layers).to(args.device)
+    dummy_model = utils.RNN(args.d_model, len(vocab),
+                            args.num_layers).to(args.device)
 
     def collate_batch(batch):
         refs = []
         trns = []
         for ref, trn, *_ in batch:
-            ref_words = tokenize.word_tokenize(ref)
+            ref_words = tokenize.word_tokenize(ref.lower())
             ref_tokens = vocab(ref_words)
             ref_tokens = ref_tokens[:args.pad_len]
             ref_tokens = ref_tokens + [pad_index] * \
                 (args.pad_len - len(ref_tokens))
             refs.append(ref_tokens)
-            trn_words = tokenize.word_tokenize(trn)
+            trn_words = tokenize.word_tokenize(trn.lower())
             trn_tokens = vocab(trn_words)
-            trn_tokens = trn_tokens[:args.pad_len]
+            trn_tokens = trn_tokens[:args.pad_len - 1]
+            trn_tokens = [bos_index] + trn_tokens + [eos_index]
             trn_tokens = trn_tokens + [pad_index] * \
-                (args.pad_len - len(trn_tokens))
+                (args.pad_len + 1 - len(trn_tokens))
             trns.append(trn_tokens)
         return torch.tensor(refs).to(args.device), torch.tensor(trns).to(
             args.device)
@@ -158,16 +192,26 @@ def main():
     test_loader = DataLoader(test_ds,
                              batch_size=args.batch_size,
                              collate_fn=collate_batch)
-    best, last = train_model(model, vocab, args, train_loader, val_loader)
+
+    def epoch_callback(best, last):
+        torch.save(best, 'best.pt')
+        torch.save(last, 'last.pt')
+
+    best, last = train_model(model,
+                             vocab,
+                             args,
+                             train_loader,
+                             val_loader,
+                             epoch_callback=epoch_callback)
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_index)
     model.load_state_dict(best)
-    torch.save(model, 'best_rnn.pt')
+    torch.save(model, 'best_rnn.ckpt')
     best_metrics = evaluate_model(model, test_loader, loss_fn)
     print('Metrics of the best model on test set:')
     for name, value in best_metrics.items():
         print(f'{name}: {value:.4f}')
     model.load_state_dict(last)
-    torch.save(model, 'last_rnn.pt')
+    torch.save(model, 'last_rnn.ckpt')
     last_metrics = evaluate_model(model, test_loader, loss_fn)
     print('Metrics of the last model on test set:')
     for name, value in last_metrics.items():
@@ -176,3 +220,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+# TODO seeding
+# TODO tensorboard logging

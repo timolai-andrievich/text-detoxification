@@ -172,19 +172,20 @@ class RNN(nn.Module):
         """
         super().__init__()
         self.embed = nn.Embedding(vocab_size, hidden_size)
-        self.rnn = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
+        self.encoder = nn.LSTM(hidden_size,
+                               hidden_size,
+                               num_layers=num_layers,
+                               batch_first=True)
+        self.decoder = nn.LSTM(hidden_size,
+                               hidden_size,
+                               num_layers=num_layers,
+                               batch_first=True)
         self.fc = nn.Linear(hidden_size, vocab_size)
 
-    def forward(self, x: torch.Tensor):
-        """Forwards tensor through the module.
-
-        Args:
-            x (Tensor): Inputs to the module.
-
-        Returns:
-            Tensor: Outputs of the module.
-        """
-        x = self.embed(x)
-        x, _ = self.rnn(x)
+    def forward(self, reference: torch.Tensor, translation: torch.Tensor):
+        ref = self.embed(reference)
+        trn = self.embed(translation)
+        _, context = self.encoder(ref)
+        x, _ = self.decoder(trn, context)
         x = self.fc(x)
         return x

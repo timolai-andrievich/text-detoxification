@@ -54,3 +54,27 @@ def test_dictionary_model():
     transformed_text = model.transform(text)
     target_text = ['A', 'B', 'B', 'A', 'B', 'C']
     assert transformed_text == target_text
+
+
+def test_rnn():
+    """Tests `RNN` class.
+    """
+    # A simple sanity check by making sure it can overfit on simple datac
+    torch.random.manual_seed(42)
+    dummy_inputs = torch.randint(0, 10, (16, 32))
+    dummy_target = torch.randint(0, 10, (16, 32))
+    loss_fn = torch.nn.CrossEntropyLoss()
+    model = utils.RNN(16, 10, 1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+    for _ in range(400):
+        pred = model(dummy_inputs)
+        pred = torch.flatten(pred, end_dim=-2)
+        target = torch.flatten(dummy_target)
+        loss = loss_fn(pred, target)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    print(loss.item())
+    outputs = model(dummy_inputs)
+    accuracy = torch.mean(outputs.argmax(dim=-1) == dummy_target, dtype=float)
+    assert accuracy > .9

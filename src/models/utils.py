@@ -156,3 +156,35 @@ class DictionaryModel:
             Dict[str, str]: Dictionary of toxic words and their synonyms.
         """
         return self._dictionary
+
+
+class RNN(nn.Module):
+    """A simple recurrent neural network using LSTM as a backbone.
+    """
+
+    def __init__(self, hidden_size: int, vocab_size: int, num_layers: int):
+        """A simple recurrent neural network using LSTM as a backbone.
+
+        Args:
+            hidden_size (int): The hidden dimension of LSTM and embeddings.
+            vocab_size (int): The size of the vocabulary.
+            num_layers (int): The number of layers in LSTM.
+        """
+        super().__init__()
+        self.embed = nn.Embedding(vocab_size, hidden_size)
+        self.rnn = nn.LSTM(hidden_size, hidden_size, num_layers=num_layers)
+        self.fc = nn.Linear(hidden_size, vocab_size)
+
+    def forward(self, x: torch.Tensor):
+        """Forwards tensor through the module.
+
+        Args:
+            x (Tensor): Inputs to the module.
+
+        Returns:
+            Tensor: Outputs of the module.
+        """
+        x = self.embed(x)
+        x, _ = self.rnn(x)
+        x = self.fc(x)
+        return x

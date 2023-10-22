@@ -23,14 +23,23 @@ def parse_args() -> Args:
         Args: Parsed arguments.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input', dest='input_file',
-                        type=str, help='The input file. If "stdin", '
+    parser.add_argument('--input',
+                        dest='input_file',
+                        required=True,
+                        type=str,
+                        help='The input file. If "stdin", '
                         'lines are read from standard input.')
-    parser.add_argument('--output', dest='output_file',
-                        type=str, help='The output file. If "stdout", '
+    parser.add_argument('--output',
+                        dest='output_file',
+                        required=True,
+                        type=str,
+                        help='The output file. If "stdout", '
                         'lines are written to standard output.')
-    parser.add_argument('--dictionary', dest='dictionary',
-                        type=str, help='Dictionary file in .json format.')
+    parser.add_argument('--dictionary',
+                        dest='dictionary',
+                        required=True,
+                        type=str,
+                        help='Dictionary file in .json format.')
     return parser.parse_args()
 
 
@@ -39,13 +48,16 @@ def autocapitalize(words: List[str]) -> List[str]:
 
     Args:
         words (List[str]): Words to be capitalized.
-    
+
     Returns:
         List[str]: Words with capitalization applied.
     """
     tagged_words = nltk.pos_tag(words)
     tags = ['NNP', 'NNPS']
-    capitalized = [word.capitalize() if tag in tags else word for word, tag in tagged_words]
+    capitalized = [
+        word.capitalize() if tag in tags else word
+        for word, tag in tagged_words
+    ]
     capitalized[0] = capitalized[0].capitalize()
     return capitalized
 

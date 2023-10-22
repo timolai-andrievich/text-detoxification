@@ -23,8 +23,8 @@ def test_pair_dataset():
     dataframe = pd.DataFrame(data=data)
     dataset = utils.PairDataset(dataframe)
     assert len(dataset) == 2
-    assert dataset[0] == ('normal 1', 'toxic 1', 0.0, 1.0, 0.5)
-    assert dataset[1] == ('normal 2', 'toxic 2', 0.0, 1.0, 0.5)
+    assert dataset[0] == ('toxic 1', 'normal 1', 1.0, 0.0, 0.5)
+    assert dataset[1] == ('toxic 2', 'normal 2', 1.0, 0.0, 0.5)
 
 
 def test_logistic_classifier():

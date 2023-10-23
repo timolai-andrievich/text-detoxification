@@ -62,19 +62,20 @@ def test_rnn():
     # A simple sanity check by making sure it can overfit on simple datac
     torch.random.manual_seed(42)
     dummy_inputs = torch.randint(0, 10, (16, 32))
-    dummy_target = torch.randint(0, 10, (16, 32))
+    dummy_translation = torch.randint(0, 10, (16, 33))
+    dummy_target = dummy_translation[:, 1:]
+    dummy_translation = dummy_translation[:, :-1]
     loss_fn = torch.nn.CrossEntropyLoss()
     model = utils.RNN(16, 10, 1)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-3)
     for _ in range(400):
-        pred = model(dummy_inputs)
+        pred = model(dummy_inputs, dummy_translation)
         pred = torch.flatten(pred, end_dim=-2)
         target = torch.flatten(dummy_target)
         loss = loss_fn(pred, target)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-    print(loss.item())
-    outputs = model(dummy_inputs)
+    outputs = model(dummy_inputs, dummy_translation)
     accuracy = torch.mean(outputs.argmax(dim=-1) == dummy_target, dtype=float)
     assert accuracy > .9

@@ -1,7 +1,7 @@
 import argparse
 from collections import Counter
 import copy
-from typing import TypedDict
+from typing import TypedDict, List, Tuple
 
 import nltk
 from nltk import tokenize
@@ -16,8 +16,34 @@ import tqdm
 import utils
 
 
-def get_vocab(dataset: utils.PairDataset, specials,
-              args) -> torchtext.vocab.Vocab:
+class Args(TypedDict):
+    """Command line arguments.
+    """
+    dataset_file: str
+    learning_rate: float
+    epochs: int
+    pad_len: int
+    batch_size: int
+    device: str
+    d_model: int
+    num_layers: int
+    max_tokens: int
+    seed: int
+
+
+def get_vocab(dataset: utils.PairDataset, specials: List[str],
+              args: Args) -> torchtext.vocab.Vocab:
+    """Builds vocabulary from a dataset.
+
+    Args:
+        dataset (PairDataset): Dataset containing reference-translation
+        pairs.
+        specials (List[str]): List of special tokens.
+        args (Args): Command line arguments.
+
+    Returns:
+        Vocab: `torchtext.vocab.Vocab` vocabulary.
+    """
     counter = Counter()
     pbar = tqdm.tqdm(total=len(dataset), desc='Building vocabulary')
     for ref_txt, trn_txt, *_ in dataset:
@@ -35,40 +61,77 @@ def get_vocab(dataset: utils.PairDataset, specials,
     return vocab
 
 
-class Args(TypedDict):
-    dataset_file: str
-    learning_rate: float
-    epochs: int
-    pad_len: int
-    batch_size: int
-    device: str
-    d_model: int
-    num_layers: int
-    max_tokens: int
-
-
 def parse_args() -> Args:
+    """Parses command line arguments.
+
+    Returns:
+        Args: Parsed arguments.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset',
                         type=str,
                         required=True,
+                        help='Name of the dataset file in .tsv format.',
                         dest='dataset_file')
-    parser.add_argument('--learning-rate', type=float, default=1e-3)
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--pad-len', type=int, default=200)
-    parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--device', choices=['cuda', 'cpu'], default='cpu')
-    parser.add_argument('--layers', type=int, dest='num_layers', default=1)
-    parser.add_argument('--d-model', type=int, dest='d_model', default=64)
+    parser.add_argument('--learning-rate',
+                        type=float,
+                        default=1e-3,
+                        help='Learning rate of the model.')
+    parser.add_argument('--epochs',
+                        type=int,
+                        default=10,
+                        help='Number of training epochs.')
+    parser.add_argument('--pad-len',
+                        type=int,
+                        default=200,
+                        help='Length that the sequences are being padded to.')
+    parser.add_argument('--batch-size',
+                        type=int,
+                        default=64,
+                        help='Size of training minibatches.')
+    parser.add_argument('--device',
+                        choices=['cuda', 'cpu'],
+                        default='cpu',
+                        help='The device the model is trained on')
+    parser.add_argument('--layers',
+                        type=int,
+                        dest='num_layers',
+                        default=1,
+                        help='The number of LSTM layers in the model.')
+    parser.add_argument('--d-model',
+                        type=int,
+                        dest='d_model',
+                        default=64,
+                        help='The dimensionality of token embeddings.')
     parser.add_argument('--max-vocab-size',
                         type=int,
                         dest='max_tokens',
+                        help='Maximum size of vocabulary',
                         default=4096)
+    parser.add_argument('--seed',
+                        type=int,
+                        dest='seed',
+                        help='Seed for random generators. '
+                        'Random if not specified.',
+                        default=None)
     args = parser.parse_args()
     return args
 
 
-def evaluate_model(model, loader, loss_fn):
+def evaluate_model(model: nn.Module, loader: DataLoader, loss_fn: Callable[[Tensor], Tensor]): Dict[str, float]:
+    """Evaluates model and returns dictionary of metrics.
+    Metrics:
+    - Loss
+
+    Args:
+        model (Module): Model to be evaluated.
+        loader (DataLoader): Evaluation data loader.
+        loss_fn (Tensor -> Tensor): Loss function. Passed because `pad_index`
+        should be ignored when calculating loss.
+
+    Returns:
+        Dict[str, float]: Dictionary of metric name -> metric value.
+    """
     model.eval()
     losses = []
     total_len = 0
@@ -86,12 +149,23 @@ def evaluate_model(model, loader, loss_fn):
     return {'Loss': mean_loss}
 
 
-def train_model(model,
-                vocab,
-                args,
-                train_loader,
-                val_loader,
-                epoch_callback=None):
+def train_model(model: nn.Module,
+                vocab: torchtext.vocab.Vocab,
+                args: Args,
+                train_loader: DataLoader,
+                val_loader: DataLoader,
+                epoch_callback: Callable[[Dict, Dict]] = None):
+    """Trains the model in-place.
+
+    Args:
+        model (Module): Model to be trained.
+        vocab (Vocab): Vocabulary.
+        args (Args): Command-line arguments.
+        train_loader (DataLoader): Loader for training set.
+        val_loader (DataLoader): Loader for validation set.
+        epoch_callback (Callable): Function that gets called at the end
+        of each epoch. Arguments are two state dicts: (best, last)
+    """
     pad_index = vocab.get_stoi()['<pad>']
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_index)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -109,9 +183,13 @@ def train_model(model,
             translation = trn[:, :-1]
             ref_pred = model(ref, translation)
             ref_pred = torch.flatten(ref_pred, end_dim=-2)
+            trn_pred = model(translation, translation)
+            trn_pred = torch.flatten(trn_pred, end_dim=-2)
             target = trn[:, 1:]
             target = torch.flatten(target)
-            loss = loss_fn(ref_pred, target)
+            loss_ref = loss_fn(ref_pred, target)
+            loss_trn = loss_fn(trn_pred, target)
+            loss = (loss_ref + loss_trn) / 2
             optimizer.zero_grad()
             loss.backward()
             train_losses.append(loss.item() * len(ref))
@@ -136,8 +214,13 @@ def train_model(model,
 
 
 def main():
+    """Main function of the program.
+    """
     nltk.download('punkt', quiet=True)
     args = parse_args()
+    if args.seed is not None:
+        torch.random.manual_seed(args.seed)
+        np.random.seed(args.seed)
     dataframe = pd.read_csv(args.dataset_file, sep='\t')
     # dataframe = dataframe.head(1000)  # DEBUG
     dataset = utils.PairDataset(dataframe)
@@ -155,7 +238,15 @@ def main():
     dummy_model = utils.RNN(args.d_model, len(vocab),
                             args.num_layers).to(args.device)
 
-    def collate_batch(batch):
+    def collate_batch(batch) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Collates batch into tensors.
+
+        Args:
+            batch: Batch of tuples from `PairDataset`
+
+        Returns:
+            Tuple[Tensor, Tensor]: Tuple of (reference, translation) tokens.
+        """
         refs = []
         trns = []
         for ref, trn, *_ in batch:
@@ -194,8 +285,12 @@ def main():
                              collate_fn=collate_batch)
 
     def epoch_callback(best, last):
-        torch.save(best, 'best.pt')
-        torch.save(last, 'last.pt')
+        """Saves the model checkpoints at the end of each epoch.
+        """
+        dummy_model.load_state_dict(best)
+        torch.save(dummy_model, 'best_rnn.ckpt')
+        dummy_model.load_state_dict(last)
+        torch.save(dummy_model, 'last_rnn.ckpt')
 
     best, last = train_model(model,
                              vocab,

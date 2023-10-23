@@ -5,6 +5,7 @@ from typing import Tuple, Dict, List
 import torch
 from torch import nn
 from torch.utils.data import Dataset
+import torchtext
 import pandas as pd
 import numpy as np
 
@@ -189,3 +190,36 @@ class RNN(nn.Module):
         x, _ = self.decoder(trn, context)
         x = self.fc(x)
         return x
+
+
+class RNNModel:
+
+    def __init__(self,
+                 vocab: torchtext.vocab.Vocab,
+                 model: RNN,
+                 max_len=100,
+                 device='cpu'):
+        self.vocab = vocab
+        self.model = model
+        self._bos_index = vocab.get_stoi()['<bos>']
+        self._unk_index = vocab.get_default_index()
+        self.max_len = max_len
+        self.device = device
+
+    def transform(self, sentence: List[str]) -> List[str]:
+        generated_indicies = [self._bos_index]
+        sentence_indicies = self.vocab(sentence)
+        sentence_tensor = torch.tensor(sentence_indicies).view(1, -1)
+        for _ in range(self.max_len):
+            generated_tensor = torch.tensor(generated_indicies).view(1, -1)
+            outputs = self.model(sentence_tensor.to(self.device),
+                                 generated_tensor.to(self.device))
+            outputs[:, :, self._unk_index] = -torch.inf
+            new_token = outputs.argmax(dim=-1)[0, -1].item()
+            if self.vocab.lookup_token(new_token) == '<eos>':
+                break
+            generated_indicies.append(new_token)
+        generated_words = [
+            self.vocab.lookup_token(token) for token in generated_indicies
+        ]
+        return generated_words[1:]

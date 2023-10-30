@@ -161,4 +161,5 @@ cython_debug/
 
 # Project-specific
 /data/
-test.ipynb
+/test.ipynb
+/runs

@@ -1,3 +1,5 @@
+"""A script for training the baseline model.
+"""
 import argparse
 import json
 from typing import TypedDict, List

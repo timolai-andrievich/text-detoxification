@@ -1,5 +1,6 @@
+"""A script for transforming the sentences using the RNN model.
+"""
 import argparse
-import json
 from typing import TypedDict, List
 import sys
 

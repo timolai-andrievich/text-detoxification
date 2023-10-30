@@ -10,6 +10,7 @@ import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, random_split
+from torch.utils import tensorboard as torchboard
 import torchtext
 import tqdm
 
@@ -29,6 +30,7 @@ class Args(TypedDict):
     num_layers: int
     max_tokens: int
     seed: int
+    log_dir: str
 
 
 def get_vocab(dataset: utils.PairDataset, specials: List[str],
@@ -114,11 +116,17 @@ def parse_args() -> Args:
                         help='Seed for random generators. '
                         'Random if not specified.',
                         default=None)
+    parser.add_argument('--log-dir',
+                        type=int,
+                        dest='log_dir',
+                        help='A directory for tensorboard logs. '
+                        './runs/ by default.',
+                        default=None)
     args = parser.parse_args()
     return args
 
 
-def evaluate_model(model: nn.Module, loader: DataLoader, loss_fn: Callable[[Tensor], Tensor]): Dict[str, float]:
+def evaluate_model(model: nn.Module, loader: DataLoader, loss_fn) -> dict[str, float]:
     """Evaluates model and returns dictionary of metrics.
     Metrics:
     - Loss
@@ -154,7 +162,8 @@ def train_model(model: nn.Module,
                 args: Args,
                 train_loader: DataLoader,
                 val_loader: DataLoader,
-                epoch_callback: Callable[[Dict, Dict]] = None):
+                epoch_callback=None,
+                batch_callback=None):
     """Trains the model in-place.
 
     Args:
@@ -165,7 +174,16 @@ def train_model(model: nn.Module,
         val_loader (DataLoader): Loader for validation set.
         epoch_callback (Callable): Function that gets called at the end
         of each epoch. Arguments are two state dicts: (best, last)
+        batch_callback (Callable): Function that gets called at the end
+        of each epoch, and after procissing a batch. Takes one argument:
+        a dictionary mapping a name of the metric to its value.
     """
+    if batch_callback is None:
+        def batch_callback(*_args, **_kwargs):
+            pass
+    if epoch_callback is None:
+        def epoch_callback(*_args, **_kwargs):
+            pass
     pad_index = vocab.get_stoi()['<pad>']
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_index)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -174,6 +192,7 @@ def train_model(model: nn.Module,
     last = None
     best_val_loss = float('inf')
     postfix = {}
+    step = 0
     for epoch in range(args.epochs):
         train_losses = []
         train_total = 0
@@ -196,11 +215,16 @@ def train_model(model: nn.Module,
             optimizer.step()
             pbar.update(1)
             train_total += len(ref)
+            step += 1
+            metrics = {'Epoch': epoch, 'Step': step, 'Training loss': loss.item()}
+            batch_callback(metrics)
         train_loss = np.mean(train_losses) / train_total
         postfix.update({'Mean train loss': f'{train_loss:.4f}'})
         pbar.set_postfix(postfix)
         last = copy.deepcopy(model.state_dict())
         metrics = evaluate_model(model, val_loader, loss_fn)
+        metrics.update({'Epoch': epoch, 'Step': step})
+        batch_callback(metrics)
         val_loss = metrics['Loss']
         postfix.update({'Mean validation loss': f'{val_loss:.4f}'})
         if val_loss < best_val_loss:
@@ -291,12 +315,22 @@ def main():
         torch.save(dummy_model, 'best_rnn.ckpt')
         dummy_model.load_state_dict(last)
         torch.save(dummy_model, 'last_rnn.ckpt')
+    
+    writer = torchboard.writer.SummaryWriter(args.log_dir)
+
+    def batch_callback(metrics: dict[str, float]):
+        """Saves metrics into tensorboard logs.
+        """
+        for metric, value in metrics.items():
+            writer.add_scalar(metric, value, global_step=metrics['Step'])
+        writer.flush()
 
     best, last = train_model(model,
                              vocab,
                              args,
                              train_loader,
                              val_loader,
+                             batch_callback=batch_callback,
                              epoch_callback=epoch_callback)
     loss_fn = nn.CrossEntropyLoss(ignore_index=pad_index)
     model.load_state_dict(best)
@@ -315,5 +349,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-# TODO seeding
-# TODO tensorboard logging
+# TODO fix mean training loss calculations

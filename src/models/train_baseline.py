@@ -5,6 +5,7 @@ import argparse
 from collections import Counter, OrderedDict
 import json
 import os
+import sys
 import random  # For seeding
 from typing import TypedDict, List, Tuple, Optional
 
@@ -289,7 +290,7 @@ def main():
     if not os.path.exists(args.dataset_file) or not os.path.isfile(
             args.dataset_file):
         print(f'File {args.dataset_file} does not exist.')
-        exit(1)
+        sys.exit(1)
     dataframe = pd.read_csv(args.dataset_file, sep='\t', index_col=0)
     test_proportion = .1
     dataset = utils.PairDataset(dataframe)

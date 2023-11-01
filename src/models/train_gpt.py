@@ -64,7 +64,7 @@ def parse_args() -> Args:
                         dest='max_pairs',
                         help='Maximum number of reference-translation pairs '
                         'to finetune on.',
-                        default=10000)
+                        default=20000)
     parser.add_argument('--warmup-steps',
                         type=int,
                         dest='warmup_steps',

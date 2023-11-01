@@ -194,8 +194,6 @@ def train_model(model: nn.Module,
     postfix = {}
     step = 0
     for epoch in range(args.epochs):
-        train_losses = []
-        train_total = 0
         model.train()
         postfix.update({'Epoch': epoch})
         for ref, trn in train_loader:
@@ -211,16 +209,11 @@ def train_model(model: nn.Module,
             loss = (loss_ref + loss_trn) / 2
             optimizer.zero_grad()
             loss.backward()
-            train_losses.append(loss.item() * len(ref))
             optimizer.step()
             pbar.update(1)
-            train_total += len(ref)
             step += 1
             metrics = {'Epoch': epoch, 'Step': step, 'Training loss': loss.item()}
             batch_callback(metrics)
-        train_loss = np.mean(train_losses) / train_total
-        postfix.update({'Mean train loss': f'{train_loss:.4f}'})
-        pbar.set_postfix(postfix)
         last = copy.deepcopy(model.state_dict())
         metrics = evaluate_model(model, val_loader, loss_fn)
         metrics.update({'Epoch': epoch, 'Step': step})
@@ -349,4 +342,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-# TODO fix mean training loss calculations

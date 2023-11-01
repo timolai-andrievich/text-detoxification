@@ -1,6 +1,4 @@
 #!python
-# TODO unzip arg is wrong
-# TODO download progress bar format
 """
 A script for downloading the raw data.
 """
@@ -51,9 +49,9 @@ def parse_args() -> ArgsTuple:
                         action='store_true',
                         help='Do not try to find the /data/raw directory, ' +
                         'and download directly into the output directory.')
-    parser.add_argument('--unzip',
+    parser.add_argument('--no-unzip',
                         action='store_false',
-                        help='Unzip the downloaded data automatically')
+                        help='Do not unzip the downloaded data automatically')
     return parser.parse_args()
 
 

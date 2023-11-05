@@ -160,4 +160,9 @@ cython_debug/
 #.idea/
 
 # Project-specific
-data/
+/data/
+/test.ipynb
+/runs
+
+# Too large to upload to github
+/models/gpt

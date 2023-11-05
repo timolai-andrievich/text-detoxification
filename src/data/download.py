@@ -15,6 +15,7 @@ DOWNLOAD_URL = "https://github.com/skoltech-nlp/detox/" +\
     "releases/download/emnlp2021/filtered_paranmt.zip"
 REPOSITORY_NAME = 'text-detoxification'
 
+
 @dataclass
 class ArgsTuple:
     """Wrapper class for program arguments, needed for typing.
@@ -44,16 +45,13 @@ def parse_args() -> ArgsTuple:
     parser.add_argument('--output-directory',
                         default='./',
                         help='Where to put the dataset.')
-    parser.add_argument(
-        '--no-guessing',
-        action='store_true',
-        help=
-        'Do not try to find the /data/raw directory, ' + \
-        'and download directly into the output directory.'
-    )
-    parser.add_argument('--unzip',
+    parser.add_argument('--no-guessing',
+                        action='store_true',
+                        help='Do not try to find the /data/raw directory, ' +
+                        'and download directly into the output directory.')
+    parser.add_argument('--no-unzip',
                         action='store_false',
-                        help='Unzip the downloaded data automatically')
+                        help='Do not unzip the downloaded data automatically')
     return parser.parse_args()
 
 
@@ -114,10 +112,12 @@ def guess_data_directory(target_directory: str) -> str:
     path_directories = get_path_directories(target_directory)
     if path_directories and path_directories[-2:] == ['src', 'data']:
         # Check if the script is run from the same directory it is in.
-        target_directory = os.path.join(*path_directories[:-2]) # pylint: disable=no-value-for-parameter
+        target_directory = os.path.join(
+            *path_directories[:-2])  # pylint: disable=no-value-for-parameter
     elif path_directories and path_directories[-1] == 'src':
         # Check if the script is run from the src directory
-        target_directory = os.path.join(*path_directories[:-1]) # pylint: disable=no-value-for-parameter
+        target_directory = os.path.join(
+            *path_directories[:-1])  # pylint: disable=no-value-for-parameter
     elif REPOSITORY_NAME not in path_directories:
         # If the name of the repository is not in the path, check children directories
         subdirectories = get_subdirectories(target_directory)
@@ -157,12 +157,17 @@ def download_file(target_directory: str, url: str, quiet: bool) -> str:
     with requests.get(url, stream=True,
                       timeout=10) as request, open(filename, 'wb') as file:
         request.raise_for_status()
-        total_size = request.headers.get('content-lenth', 0)
+        total_size = int(request.headers.get('Content-Length', 0))
         chunk_size = 16 * 2**10
-        bar_format = '{elapsed} {rate_noinv_fmt}'
+        if total_size == 0:
+            bar_format = '{elapsed} {rate_noinv_fmt}'
+        else:
+            bar_format = '{desc}: {percentage:3.0f}%|{bar}| {n:.3f}{unit}/{total:.3f}{unit} ' +\
+                '[{elapsed}<{remaining}, {rate_noinv_fmt}]'
         with tqdm.tqdm(total=total_size / 2**20,
                        disable=quiet,
                        unit='MB',
+                       desc='Downloading',
                        bar_format=bar_format) as pbar:
             for chunk in request.iter_content(chunk_size):
                 file.write(chunk)

@@ -4,6 +4,7 @@ import pandas as pd
 import transformers
 import torch
 from torch.utils.data import Dataset, DataLoader
+from torch.utils import tensorboard as torchboard
 import tqdm
 
 
@@ -64,7 +65,7 @@ def parse_args() -> Args:
                         dest='max_pairs',
                         help='Maximum number of reference-translation pairs '
                         'to finetune on.',
-                        default=20000)
+                        default=10000)
     parser.add_argument('--warmup-steps',
                         type=int,
                         dest='warmup_steps',
@@ -120,8 +121,10 @@ def main():
     sheduler = transformers.get_linear_schedule_with_warmup(
         optimizer, args.warmup_steps, training_steps)
     train_dataset = ToxicDataset(dataframe)
+    step = 0
+    writer = torchboard.writer.SummaryWriter(args.log_dir)
     with tqdm.tqdm(total=len(train_dataset) * args.epochs, disable=args.quiet) as pbar:
-        for _epoch in range(args.epochs):
+        for epoch in range(args.epochs):
             for text in train_dataset:
                 tokens = tokenizer.encode(text)
                 tokens_tensor = torch.tensor(tokens).to(args.device)
@@ -132,10 +135,19 @@ def main():
                 optimizer.step()
                 sheduler.step()
                 pbar.update()
+                step += 1
+                metrics = {
+                    'Step': step,
+                    'Epoch': epoch,
+                    'Loss': loss.item(),
+                }
+                for metric, value in metrics.items():
+                    writer.add_scalar(metric, value, global_step=step)
+                writer.flush()
     model.save_pretrained(args.model_dir)
 
 if __name__ == '__main__':
     main()
 
-# TODO Add validation and tensorboard logs
+# TODO Add validation
 # TODO Fix deprecation warnings
